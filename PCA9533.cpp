@@ -22,19 +22,20 @@ __asm volatile ("nop");
 #include "PCA9533.h"
 
 //    CONSTRUCTOR
-PCA9533::PCA9533() {
+Pca9533::PCA9533::PCA9533(pca9533_chip_type_t chipType) {
+  PCA9533_DEV_ADDR = chipType == PCA9533_CHIP_TYPE01 ? PCA9533_DEV_ADDR_CHIP01 : PCA9533_DEV_ADDR_CHIP02;
 }
 
 //    DESTRUCTOR
-PCA9533::~PCA9533() {}
+Pca9533::PCA9533::~PCA9533() {}
 
 //    PING (0 = Success, other = Error code) details in ReadMe
-byte PCA9533::ping() {
-  Wire.beginTransmission(DEV_ADDR);
+byte Pca9533::PCA9533::ping() {
+  Wire.beginTransmission(PCA9533_DEV_ADDR);
   return Wire.endTransmission();
 }
 
-bool PCA9533::init() {
+bool Pca9533::PCA9533::init() {
   setReg(REG_PSC0, 0x00);
   setReg(REG_PSC1, 0x00);
   setReg(REG_PWM0, 0x00);
@@ -44,45 +45,79 @@ bool PCA9533::init() {
 }
 
 //    SET REGISTER DATA
-void PCA9533::setReg(reg_ptr_t regPtr, byte newSetting) {
-    if (regPtr > 0) {
-        initCall(regPtr);
-        Wire.write(newSetting);
-        endCall();
-    }
+void Pca9533::PCA9533::setReg(pca9533_reg_ptr_t regPtr, byte newSetting) {
+  if (regPtr > 0) {
+    // log_d("Writing register: 0x%02x value: 0x%02x", regPtr, newSetting);
+    initCall(regPtr);
+    Wire.write(newSetting);
+    endCall();
+  }
+}
+//    READ REGISTER DATA
+byte Pca9533::PCA9533::readReg(pca9533_reg_ptr_t regPtr) {
+  byte ret = 0;
+  Wire.beginTransmission(PCA9533_DEV_ADDR);
+  Wire.write(regPtr);
+  Wire.endTransmission();
+  Wire.requestFrom(PCA9533_DEV_ADDR, (uint8_t)1);
+  ret = Wire.read();
+  // log_d("Read from register: 0x%02x read(1): 0x%02x", regPtr, ret);
+  return ret;
 }
 
 //    INITIATE I2C COMMUNICATION
-void PCA9533::initCall(reg_ptr_t regPtr) {
-    Wire.beginTransmission(DEV_ADDR);
-    Wire.write(regPtr);
+void Pca9533::PCA9533::initCall(pca9533_reg_ptr_t regPtr) {
+  Wire.beginTransmission(PCA9533_DEV_ADDR);
+  Wire.write(regPtr);
 }
 
 //    SET MODE - Requires pin and mode to set.
 // 	  Parameters IOx & LED_MODE_x (See header file)
-void PCA9533::setMode(pin_t pin, led_out_mode_t newMode) {
-    byte bit_mask;
-    bit_mask = (3<<pin);
-    port_setting = (port_setting & (~bit_mask)) | (newMode<<pin);
-    setReg(REG_LED, port_setting);
+void Pca9533::PCA9533::setMode(pca9533_pin_t pin, pca9533_led_out_mode_t newMode) {
+  byte bit_mask;
+  bit_mask = (3 << pin);
+  port_setting = (port_setting & (~bit_mask)) | (newMode << pin);
+  setReg(REG_LED, port_setting);
 }
 
 //    SET MODE FOR ALL PINS :: Parameters ALL_ON | ALL_OFF
-void PCA9533::setMode(mode_t newMode) {
-    setReg(REG_LED, newMode);
+void Pca9533::PCA9533::setMode(pca9533_mode_t newMode) {
+  setReg(REG_LED, newMode);
 }
 
 //    SET PWM Registers :: Parameters REG_PWM0 | REG_PWM1
-void PCA9533::setPWM(reg_ptr_t pwmPort, int pwmValue) {
-	setReg(pwmPort, pwmValue);
+void Pca9533::PCA9533::setPWM(pca9533_reg_ptr_t pwmPort, int pwmValue) {
+  setReg(pwmPort, pwmValue);
 }
 
 //    SET PSC Registers :: Parameters REG_PSC0 | REG_PSC1
-void PCA9533::setPSC(reg_ptr_t pscPort, int pscValue) {
-	setReg(pscPort, pscValue);
+//       PCS0/1 (Frequency Prescaler 0/1) is used to program the period of the PWM output.
+//       Blink Period in seconds = (pscValue + 1) / 152)
+//       Max freq of 152Hz is set when pscValue is 0
+void Pca9533::PCA9533::setPSC(pca9533_reg_ptr_t pscPort, int pscValue) {
+  setReg(pscPort, pscValue);
+}
+
+
+bool Pca9533::PCA9533::digitalRead(pca9533_pin_t pin) {
+  byte inputs = readReg(REG_INPUT);
+  bool ret = false;
+  switch (pin) {
+  case IO0:
+    ret = inputs & 0x01;
+  case IO1:
+    ret = inputs & 0x02;
+  case IO2:
+    ret = inputs & 0x04;
+  case IO3:
+    ret = inputs & 0x08;
+  }
+  // log_d("Read pin: %d as: %d", pin == IO0 ? 0 : pin == IO1 ? 1 : pin == IO2 ? 2 : pin == IO3 ? 3 : -1, ret);
+  return ret;
+
 }
 
 //    STOP I2C COMMUNICATION
-void PCA9533::endCall() {
-    _comBuffer = Wire.endTransmission();
+void Pca9533::PCA9533::endCall() {
+  _comBuffer = Wire.endTransmission();
 }
